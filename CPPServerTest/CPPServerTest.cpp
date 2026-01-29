@@ -26,25 +26,47 @@
 // 全局临界区对象：用于同步控制台输出（避免多线程打印乱码）
 CRITICAL_SECTION g_cs_console;
 std::mutex g_mutex_clients;
+std::mutex g_mutex_Send;
 
+// 第一个参数，第二个参数分别为客户端名称和对应的套接字
 std::map<std::string, SOCKET> client_sockets;
 
 bool SendMessage(std::string client_name, std::string message) {
-	std::lock_guard<std::mutex> lock(g_mutex_clients);  
+	std::lock_guard<std::mutex> lock(g_mutex_Send);
 	auto it = client_sockets.find(client_name);
 	if (it != client_sockets.end()) {
 		SOCKET client_socket = it->second;
+		message += "\n";
 		int send_bytes = send(client_socket, message.c_str(), static_cast<int>(message.size()), 0);
 		return send_bytes != SOCKET_ERROR;
 	}
 	return false;
 }
 
+bool SendUserList(std::string client_name) {
+	std::string userlist_msg;
+	{
+		std::lock_guard<std::mutex> lock(g_mutex_Send);
+		bool first = true;
+		for (const auto& pair : client_sockets) {
+			if (!first) {
+				userlist_msg += ",";
+			}
+			userlist_msg += pair.first;
+			first = false;
+		}
+	}
+	AddCommandHeader(userlist_msg, USER_LIST_MSG);
+	//userlist_msg += "\n";
+	return SendMessage(client_name, userlist_msg);
+}
+
 bool BroadcastMessage(std::string sender_name, std::string message) {
 	bool all_success = true;
-	std::string broadcast_msg = sender_name + ": " + message;  // 只拼接一次
-
-	std::lock_guard<std::mutex> lock(g_mutex_clients);  // 加锁遍历map
+	std::string broadcast_msg = sender_name + ": " + message;  
+	AddCommandHeader(broadcast_msg, BROADCAST_MSG);
+	broadcast_msg += "\n";
+	std::lock_guard<std::mutex> lock(g_mutex_Send);  // 加锁遍历map
 	for (const auto& pair : client_sockets) {
 		SOCKET client_socket = pair.second;
 		int send_bytes = send(client_socket, broadcast_msg.c_str(), static_cast<int>(broadcast_msg.size()), 0);
@@ -59,6 +81,54 @@ bool BroadcastMessage(std::string sender_name, std::string message) {
 	return all_success;
 }
 
+bool BroadcastAddUser(std::string new_user_name) {
+	bool all_success = true;
+	
+	std::string adduser_msg = new_user_name;  
+	AddCommandHeader(adduser_msg, ADD_USER_MSG);
+	adduser_msg += "\n";
+	std::lock_guard<std::mutex> lock(g_mutex_Send);  // 加锁遍历map
+	for (const auto& pair : client_sockets) {
+		// 排除新用户自身，不向其发送自己的加入广播
+		if (pair.first == new_user_name) {
+			continue;
+		}
+		SOCKET client_socket = pair.second;
+		int send_bytes = send(client_socket, adduser_msg.c_str(), static_cast<int>(adduser_msg.size()), 0);
+		if (send_bytes == SOCKET_ERROR) {
+			all_success = false;
+			// 打印错误但不终止广播
+			EnterCriticalSection(&g_cs_console);
+			std::cerr << "[广播失败] 给客户端 " << pair.first << " 发送消息失败，错误码: " << WSAGetLastError() << std::endl;
+			LeaveCriticalSection(&g_cs_console);
+		}
+	}
+	return all_success;
+}
+
+bool BroadcastRemoveUser(std::string removed_user_name) {
+	bool all_success = true;
+	std::string removeuser_msg = removed_user_name;
+	AddCommandHeader(removeuser_msg, REMOVE_USER_MSG);
+	removeuser_msg += "\n";
+	std::lock_guard<std::mutex> lock(g_mutex_Send);  // 加锁遍历map
+	for (const auto& pair : client_sockets) {
+		// 排除被移除的用户自身，不向其发送自己的离开广播
+		if (pair.first == removed_user_name) {
+			continue;
+		}
+		SOCKET client_socket = pair.second;
+		int send_bytes = send(client_socket, removeuser_msg.c_str(), static_cast<int>(removeuser_msg.size()), 0);
+		if (send_bytes == SOCKET_ERROR) {
+			all_success = false;
+			// 打印错误但不终止广播
+			EnterCriticalSection(&g_cs_console);
+			std::cerr << "[广播失败] 给客户端 " << pair.first << " 发送消息失败，错误码: " << WSAGetLastError() << std::endl;
+			LeaveCriticalSection(&g_cs_console);
+		}
+	}
+	return all_success;
+}
 // 接收客户端名称（增加错误处理和超时）
 bool ReceiveClientName(SOCKET client_socket, std::string& client_name) {
 	// 设置接收超时（避免客户端不发名称导致阻塞）
@@ -123,7 +193,7 @@ void ClientHandler(SOCKET client_socket, const char* client_ip, u_short client_p
 			std::string remaining_message;
 			SplitStringAtFirstSpace(std::string(recv_buffer), first_word, remaining_message);
 
-			if (first_word == "!broadcast")
+			if (first_word == BROADCAST_MSG)
 			{
 				// broadcast message in chat room
 				BroadcastMessage(client_name, std::string(remaining_message));
@@ -172,6 +242,8 @@ void ClientHandler(SOCKET client_socket, const char* client_ip, u_short client_p
 
 	// 清理当前客户端的资源
 	closesocket(client_socket);
+	// broadcast remove user message
+	BroadcastRemoveUser(client_name);
 	RemoveClient(client_name);
 	EnterCriticalSection(&g_cs_console);
 	std::cout << "[客户端 " << client_ip << ":" << client_port << "] 连接已关闭" << std::endl;
@@ -258,19 +330,27 @@ int main() {
 			std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 未提供有效名称，关闭连接" << std::endl;
 			continue;
 		}
+		{
 
-		// 检查名称是否重复
-		std::lock_guard<std::mutex> lock(g_mutex_clients);
-		if (client_sockets.find(client_name) != client_sockets.end()) {
-			EnterCriticalSection(&g_cs_console);
-			std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 名称 " << client_name << " 已被占用，关闭连接" << std::endl;
-			LeaveCriticalSection(&g_cs_console);
-			closesocket(client_socket);
-			continue;
+
+			// 检查名称是否重复
+			std::lock_guard<std::mutex> lock(g_mutex_clients);
+			if (client_sockets.find(client_name) != client_sockets.end()) {
+				EnterCriticalSection(&g_cs_console);
+				std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 名称 " << client_name << " 已被占用，关闭连接" << std::endl;
+				LeaveCriticalSection(&g_cs_console);
+				closesocket(client_socket);
+				continue;
+			}
+			// 存储客户端（不再用指针，直接存SOCKET）
+			client_sockets[client_name] = client_socket;
 		}
+		// 向其他客户端广播新用户加入消息
+		BroadcastAddUser(client_name);
+		
 
-		// 存储客户端（不再用指针，直接存SOCKET）
-		client_sockets[client_name] = client_socket;
+		// send user list to new client
+		SendUserList(client_name);
 
 		// 打印新连接信息
 		EnterCriticalSection(&g_cs_console);

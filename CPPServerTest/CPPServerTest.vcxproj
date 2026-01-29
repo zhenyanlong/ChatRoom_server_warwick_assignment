@@ -125,6 +125,7 @@
   <ItemGroup>
     <ClCompile Include="ConcurrentSendRecvServer.cpp" />
     <ClCompile Include="CPPServerTest.cpp" />
+    <ClCompile Include="utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="utils.h" />

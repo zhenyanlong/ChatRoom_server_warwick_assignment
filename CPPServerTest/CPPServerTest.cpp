@@ -198,10 +198,28 @@ void ClientHandler(SOCKET client_socket, const char* client_ip, u_short client_p
 				// broadcast message in chat room
 				BroadcastMessage(client_name, std::string(remaining_message));
 			}
-			else
+			else if (first_word == PRIVATE_MSG)
 			{
-				//TODO: send message to specific client
+				// send private message to specific client
+				std::string target_name;
+				std::string private_message;
+				// private message format: !private target_name message_content
+				SplitStringAtFirstSpace(remaining_message, target_name, private_message);
+				
+				std::string formatted_private_msg = client_name + " " + private_message;
+				AddCommandHeader(formatted_private_msg, PRIVATE_MSG);
+				std::cout << "[私聊] 来自 " << client_name << " 发给 " << target_name << " 的消息: " << private_message << std::endl;
+				SendMessage(target_name, formatted_private_msg);
 			}
+			else if (first_word == EXIT_MSG)
+			{
+				// client exit
+				EnterCriticalSection(&g_cs_console);
+				std::cout << "[客户端 " << client_ip << ":" << client_port << "] 请求退出连接" << std::endl;
+				LeaveCriticalSection(&g_cs_console);
+				break; // exit the loop and clean up
+			}
+			
 
 			// 向客户端发送响应
 			//std::string response = "服务器已收到: " + std::string(recv_buffer);

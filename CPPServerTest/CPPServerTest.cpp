@@ -1,34 +1,34 @@
-// 第一步：先定义Windows版本宏（必须放在所有头文件之前）
-#define _WIN32_WINNT 0x0601  // 目标Windows 7及以上，兼容所有WinSock 2.2 API
-#define WIN32_LEAN_AND_MEAN  // 排除windows.h中不必要的组件，避免引入旧版winsock.h
 
-// 必要的头文件（严格按顺序）
-#include <windows.h>          // 先包含windows.h（如果需要），但已用WIN32_LEAN_AND_MEAN避免冲突
+#define _WIN32_WINNT 0x0601  
+#define WIN32_LEAN_AND_MEAN  
+
+
+#include <windows.h>          
 #include <iostream>
 #include <string>
-#include <thread>             // 多线程核心头文件
+#include <thread>             
 #include <map>
 #include <mutex>
 #include "utils.h"
 
 
-// WinSock核心头文件（必须先包含winsock2.h，再包含ws2tcpip.h）
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-// 链接WinSock库（必须，否则编译报错）
+
 #pragma comment(lib, "ws2_32.lib")
 
-// 定义常量
-#define DEFAULT_PORT 8080          // 默认监听端口
-#define DEFAULT_BUFFER_SIZE 512    // 数据缓冲区大小
 
-// 全局临界区对象：用于同步控制台输出（避免多线程打印乱码）
+#define DEFAULT_PORT 8080          // Default listening port
+#define DEFAULT_BUFFER_SIZE 512    // Data buffer size	
+
+
 CRITICAL_SECTION g_cs_console;
 std::mutex g_mutex_clients;
 std::mutex g_mutex_Send;
 
-// 第一个参数，第二个参数分别为客户端名称和对应的套接字
+// The first parameter is the client name, and the second parameter is the corresponding socket
 std::map<std::string, SOCKET> client_sockets;
 
 bool SendMessage(std::string client_name, std::string message) {
@@ -57,7 +57,7 @@ bool SendUserList(std::string client_name) {
 		}
 	}
 	AddCommandHeader(userlist_msg, USER_LIST_MSG);
-	//userlist_msg += "\n";
+	
 	return SendMessage(client_name, userlist_msg);
 }
 
@@ -66,15 +66,15 @@ bool BroadcastMessage(std::string sender_name, std::string message) {
 	std::string broadcast_msg = sender_name + ": " + message;  
 	AddCommandHeader(broadcast_msg, BROADCAST_MSG);
 	broadcast_msg += "\n";
-	std::lock_guard<std::mutex> lock(g_mutex_Send);  // 加锁遍历map
+	std::lock_guard<std::mutex> lock(g_mutex_Send);  // Lock while iterating map
 	for (const auto& pair : client_sockets) {
 		SOCKET client_socket = pair.second;
 		int send_bytes = send(client_socket, broadcast_msg.c_str(), static_cast<int>(broadcast_msg.size()), 0);
 		if (send_bytes == SOCKET_ERROR) {
 			all_success = false;
-			// 打印错误但不终止广播
+			// Print error but do not terminate broadcast
 			EnterCriticalSection(&g_cs_console);
-			std::cerr << "[广播失败] 给客户端 " << pair.first << " 发送消息失败，错误码: " << WSAGetLastError() << std::endl;
+			std::cerr << "[Broadcast failed] Failed to send message to client " << pair.first << ", error code: " << WSAGetLastError() << std::endl;
 			LeaveCriticalSection(&g_cs_console);
 		}
 	}
@@ -87,9 +87,9 @@ bool BroadcastAddUser(std::string new_user_name) {
 	std::string adduser_msg = new_user_name;  
 	AddCommandHeader(adduser_msg, ADD_USER_MSG);
 	adduser_msg += "\n";
-	std::lock_guard<std::mutex> lock(g_mutex_Send);  // 加锁遍历map
+	std::lock_guard<std::mutex> lock(g_mutex_Send);  // Lock while iterating map
 	for (const auto& pair : client_sockets) {
-		// 排除新用户自身，不向其发送自己的加入广播
+		// Exclude the new user themselves
 		if (pair.first == new_user_name) {
 			continue;
 		}
@@ -97,9 +97,9 @@ bool BroadcastAddUser(std::string new_user_name) {
 		int send_bytes = send(client_socket, adduser_msg.c_str(), static_cast<int>(adduser_msg.size()), 0);
 		if (send_bytes == SOCKET_ERROR) {
 			all_success = false;
-			// 打印错误但不终止广播
+			
 			EnterCriticalSection(&g_cs_console);
-			std::cerr << "[广播失败] 给客户端 " << pair.first << " 发送消息失败，错误码: " << WSAGetLastError() << std::endl;
+			std::cerr << "[Broadcast failed] Failed to send message to client " << pair.first << ", error code: " << WSAGetLastError() << std::endl;
 			LeaveCriticalSection(&g_cs_console);
 		}
 	}
@@ -111,9 +111,9 @@ bool BroadcastRemoveUser(std::string removed_user_name) {
 	std::string removeuser_msg = removed_user_name;
 	AddCommandHeader(removeuser_msg, REMOVE_USER_MSG);
 	removeuser_msg += "\n";
-	std::lock_guard<std::mutex> lock(g_mutex_Send);  // 加锁遍历map
+	std::lock_guard<std::mutex> lock(g_mutex_Send);  // Lock while iterating map
 	for (const auto& pair : client_sockets) {
-		// 排除被移除的用户自身，不向其发送自己的离开广播
+		// Exclude the removed user themselves
 		if (pair.first == removed_user_name) {
 			continue;
 		}
@@ -121,19 +121,16 @@ bool BroadcastRemoveUser(std::string removed_user_name) {
 		int send_bytes = send(client_socket, removeuser_msg.c_str(), static_cast<int>(removeuser_msg.size()), 0);
 		if (send_bytes == SOCKET_ERROR) {
 			all_success = false;
-			// 打印错误但不终止广播
+			// Print error but do not terminate broadcast
 			EnterCriticalSection(&g_cs_console);
-			std::cerr << "[广播失败] 给客户端 " << pair.first << " 发送消息失败，错误码: " << WSAGetLastError() << std::endl;
+			std::cerr << "[Broadcast failed] Failed to send message to client " << pair.first << ", error code: " << WSAGetLastError() << std::endl;
 			LeaveCriticalSection(&g_cs_console);
 		}
 	}
 	return all_success;
 }
-// 接收客户端名称（增加错误处理和超时）
+// Receive client name
 bool ReceiveClientName(SOCKET client_socket, std::string& client_name) {
-	// 设置接收超时（避免客户端不发名称导致阻塞）
-	//DWORD timeout = 5000;  // 5秒超时
-	//setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
 
 	char name_buffer[DEFAULT_BUFFER_SIZE] = { 0 };
 	int name_bytes = recv(client_socket, name_buffer, DEFAULT_BUFFER_SIZE - 1, 0);
@@ -141,52 +138,64 @@ bool ReceiveClientName(SOCKET client_socket, std::string& client_name) {
 	if (name_bytes > 0) {
 		name_buffer[name_bytes] = '\0';
 		client_name = std::string(name_buffer);
-		// 移除名称中的换行/回车（客户端可能附带）
+		// Remove newline/carriage return from name 
 		client_name.erase(std::remove(client_name.begin(), client_name.end(), '\n'), client_name.end());
 		client_name.erase(std::remove(client_name.begin(), client_name.end(), '\r'), client_name.end());
 		return true;
 	}
 	else if (name_bytes == 0) {
 		EnterCriticalSection(&g_cs_console);
-		std::cerr << "[客户端名称接收] 客户端主动断开连接" << std::endl;
+		std::cerr << "[Client name reception] Client actively disconnected" << std::endl;
 		LeaveCriticalSection(&g_cs_console);
 	}
 	else {
 		EnterCriticalSection(&g_cs_console);
-		std::cerr << "[客户端名称接收] 失败，错误码: " << WSAGetLastError() << std::endl;
+		std::cerr << "[Client name reception] Failed, error code: " << WSAGetLastError() << std::endl;
 		LeaveCriticalSection(&g_cs_console);
 	}
 	return false;
 }
 
-// 移除客户端（线程安全）
+// Remove client
 void RemoveClient(const std::string& client_name) {
 	std::lock_guard<std::mutex> lock(g_mutex_clients);
 	auto it = client_sockets.find(client_name);
 	if (it != client_sockets.end()) {
-		closesocket(it->second);  // 确保套接字关闭
+		closesocket(it->second);  // Ensure socket is closed
 		client_sockets.erase(it);
 		EnterCriticalSection(&g_cs_console);
-		std::cout << "[清理] 客户端 " << client_name << " 已从列表移除" << std::endl;
+		std::cout << "[Cleanup] Client " << client_name << " removed from the list" << std::endl;
 		LeaveCriticalSection(&g_cs_console);
 	}
 }
 
 
-// 线程函数：处理单个客户端的通信逻辑（每个客户端一个线程）
+void SendPrivateMessage(std::string remaining_message, std::string client_name)
+{
+	std::string target_name;
+	std::string private_message;
+	// private message format: !private target_name message_content
+	SplitStringAtFirstSpace(remaining_message, target_name, private_message);
+
+	std::string formatted_private_msg = client_name + " " + private_message;
+	AddCommandHeader(formatted_private_msg, PRIVATE_MSG);
+	std::cout << "[Private] From " << client_name << " to " << target_name << ": " << private_message << std::endl;
+	SendMessage(target_name, formatted_private_msg);
+}
+
+// Thread function: handle communication logic for a single client (one thread per client)	
 void ClientHandler(SOCKET client_socket, const char* client_ip, u_short client_port, std::string client_name) {
-	// 线程内独立的通信循环
+	// Loop to receive client data
 	while (true) {
-		// 接收客户端数据
 		char recv_buffer[DEFAULT_BUFFER_SIZE] = { 0 };
 		int recv_bytes = recv(client_socket, recv_buffer, DEFAULT_BUFFER_SIZE - 1, 0);
 
 		if (recv_bytes > 0) {
 			recv_buffer[recv_bytes] = '\0';
-			// 加临界区：确保打印信息不被多线程打断
+			
 			EnterCriticalSection(&g_cs_console);
-			std::cout << "[客户端 " << client_ip << ":" << client_port << "] 发送数据 ("
-				<< recv_bytes << " 字节): " << recv_buffer << std::endl;
+			std::cout << "[Client " << client_ip << ":" << client_port << "] Sent data ("
+				<< recv_bytes << " bytes): " << recv_buffer << std::endl;
 			LeaveCriticalSection(&g_cs_console);
 
 			std::string first_word; 
@@ -201,70 +210,44 @@ void ClientHandler(SOCKET client_socket, const char* client_ip, u_short client_p
 			else if (first_word == PRIVATE_MSG)
 			{
 				// send private message to specific client
-				std::string target_name;
-				std::string private_message;
-				// private message format: !private target_name message_content
-				SplitStringAtFirstSpace(remaining_message, target_name, private_message);
-				
-				std::string formatted_private_msg = client_name + " " + private_message;
-				AddCommandHeader(formatted_private_msg, PRIVATE_MSG);
-				std::cout << "[私聊] 来自 " << client_name << " 发给 " << target_name << " 的消息: " << private_message << std::endl;
-				SendMessage(target_name, formatted_private_msg);
+				SendPrivateMessage(remaining_message, client_name);
 			}
 			else if (first_word == EXIT_MSG)
 			{
 				// client exit
 				EnterCriticalSection(&g_cs_console);
-				std::cout << "[客户端 " << client_ip << ":" << client_port << "] 请求退出连接" << std::endl;
+				std::cout << "[Client " << client_ip << ":" << client_port << "] Requested to exit connection" << std::endl;
 				LeaveCriticalSection(&g_cs_console);
 				break; // exit the loop and clean up
 			}
-			
-
-			// 向客户端发送响应
-			//std::string response = "服务器已收到: " + std::string(recv_buffer);
-			//int send_bytes = send(client_socket, response.c_str(), static_cast<int>(response.size()), 0);
-			/*if (send_bytes == SOCKET_ERROR) {
-				EnterCriticalSection(&g_cs_console);
-				std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 发送响应失败，错误码: "
-					<< WSAGetLastError() << std::endl;
-				LeaveCriticalSection(&g_cs_console);
-				break;
-			}
-			else {
-				EnterCriticalSection(&g_cs_console);
-				std::cout << "[客户端 " << client_ip << ":" << client_port << "] 已发送响应 ("
-					<< send_bytes << " 字节): " << response << std::endl;
-				LeaveCriticalSection(&g_cs_console);
-			}*/
 			
 			
 			
 		}
 		else if (recv_bytes == 0) {
-			// 客户端主动断开连接
+			// Client actively disconnected
 			EnterCriticalSection(&g_cs_console);
-			std::cout << "[客户端 " << client_ip << ":" << client_port << "] 主动关闭了连接" << std::endl;
+			std::cout << "[Client " << client_ip << ":" << client_port << "] Closed the connection" << std::endl;
 			LeaveCriticalSection(&g_cs_console);
 			break;
 		}
 		else {
-			// 接收数据失败
+			// Receive data failed
 			EnterCriticalSection(&g_cs_console);
-			std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 接收数据失败，错误码: "
+			std::cerr << "[Client " << client_ip << ":" << client_port << "] Receive data failed, error code: "
 				<< WSAGetLastError() << std::endl;
 			LeaveCriticalSection(&g_cs_console);
 			break;
 		}
 	}
 
-	// 清理当前客户端的资源
+	// Clean up current client's resources
 	closesocket(client_socket);
 	// broadcast remove user message
 	BroadcastRemoveUser(client_name);
 	RemoveClient(client_name);
 	EnterCriticalSection(&g_cs_console);
-	std::cout << "[客户端 " << client_ip << ":" << client_port << "] 连接已关闭" << std::endl;
+	std::cout << "[Client " << client_ip << ":" << client_port << "] Connection closed" << std::endl;
 	LeaveCriticalSection(&g_cs_console);
 }
 
@@ -272,56 +255,54 @@ void ClientHandler(SOCKET client_socket, const char* client_ip, u_short client_p
 
 
 int main() {
-	// 初始化临界区（用于线程同步输出）
 	InitializeCriticalSection(&g_cs_console);
 
-	// 1. 初始化WinSock库
+	// init winsock
 	WSADATA wsaData;
 	int wsa_result = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (wsa_result != 0) {
-		std::cerr << "WSAStartup失败，错误码: " << wsa_result << std::endl;
+		std::cerr << "WSAStartup failed, error code: " << wsa_result << std::endl;
 		DeleteCriticalSection(&g_cs_console);
 		return 1;
 	}
-	std::cout << "WinSock 2.2 初始化成功" << std::endl;
-
-	// 2. 创建服务器监听套接字（TCP）
+	std::cout << "WinSock 2.2 initialized successfully" << std::endl;
+	// Create server listening socket
 	SOCKET server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (server_socket == INVALID_SOCKET) {
-		std::cerr << "创建监听套接字失败，错误码: " << WSAGetLastError() << std::endl;
+		std::cerr << "Failed to create listening socket, error code: " << WSAGetLastError() << std::endl;
 		WSACleanup();
 		DeleteCriticalSection(&g_cs_console);
 		return 1;
 	}
-	std::cout << "监听套接字创建成功" << std::endl;
+	std::cout << "Listening socket created successfully" << std::endl;
 
-	// 3. 配置服务器地址结构
+	// Configure server address structure
 	sockaddr_in server_address = {};
 	server_address.sin_family = AF_INET;
 	server_address.sin_port = htons(DEFAULT_PORT);
 	server_address.sin_addr.s_addr = INADDR_ANY;
 
-	// 4. 绑定地址和端口
+	// Bind the socket to the specified address and port
 	if (bind(server_socket, reinterpret_cast<sockaddr*>(&server_address), sizeof(server_address)) == SOCKET_ERROR) {
-		std::cerr << "绑定地址/端口失败，错误码: " << WSAGetLastError() << std::endl;
+		std::cerr << "Failed to bind to address/port, error code: " << WSAGetLastError() << std::endl;
 		closesocket(server_socket);
 		WSACleanup();
 		DeleteCriticalSection(&g_cs_console);
 		return 1;
 	}
-	std::cout << "成功绑定到端口: " << DEFAULT_PORT << " (监听所有网卡)" << std::endl;
+	std::cout << "Successfully bound to port: " << DEFAULT_PORT << " (listening on all interfaces)" << std::endl;
 
-	// 5. 监听模式
+	// Listen mode
 	if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR) {
-		std::cerr << "监听失败，错误码: " << WSAGetLastError() << std::endl;
+		std::cerr << "Listen failed, error code: " << WSAGetLastError() << std::endl;
 		closesocket(server_socket);
 		WSACleanup();
 		DeleteCriticalSection(&g_cs_console);
 		return 1;
 	}
-	std::cout << "服务器开始监听，等待客户端连接...（端口: " << DEFAULT_PORT << "）" << std::endl;
+	std::cout << "Server is listening, waiting for client connections... (Port: " << DEFAULT_PORT << ")" << std::endl;
 
-	// 6. 主线程循环：持续接受新客户端连接
+	// Main thread loop: continuously accept new client connections
 
 	while (true) {
 		sockaddr_in client_address = {};
@@ -329,60 +310,61 @@ int main() {
 		SOCKET client_socket = accept(server_socket, reinterpret_cast<sockaddr*>(&client_address), &client_address_len);
 
 		if (client_socket == INVALID_SOCKET) {
-			// 单个accept失败不终止服务器，仅打印错误后继续监听
-			std::cerr << "接受客户端连接失败，错误码: " << WSAGetLastError() << std::endl;
+			// Single accept failure does not terminate the server, just print error and continue listening
+			std::cerr << "Failed to accept client connection, error code: " << WSAGetLastError() << std::endl;
 			continue;
 		}
 		
 		
 
-		// 转换客户端IP和端口为可读格式
+		// Convert client IP and port to readable format
 		char client_ip[INET_ADDRSTRLEN] = { 0 };
 		inet_ntop(AF_INET, &client_address.sin_addr, client_ip, INET_ADDRSTRLEN);
 		u_short client_port = ntohs(client_address.sin_port);
 
-		// 接收客户端名称
+		// Receive client name
 		std::string client_name;
 		if (!ReceiveClientName(client_socket, client_name) || client_name.empty()) {
 			closesocket(client_socket);
-			std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 未提供有效名称，关闭连接" << std::endl;
+			std::cerr << "[Client " << client_ip << ":" << client_port << "] Did not provide a valid name, closing connection" << std::endl;
 			continue;
 		}
 		{
 
 
-			// 检查名称是否重复
+			// Check if the name is already taken
 			std::lock_guard<std::mutex> lock(g_mutex_clients);
 			if (client_sockets.find(client_name) != client_sockets.end()) {
 				EnterCriticalSection(&g_cs_console);
-				std::cerr << "[客户端 " << client_ip << ":" << client_port << "] 名称 " << client_name << " 已被占用，关闭连接" << std::endl;
+				std::cerr << "[Client " << client_ip << ":" << client_port << "] Name " << client_name << " is already taken, closing connection" << std::endl;
 				LeaveCriticalSection(&g_cs_console);
 				closesocket(client_socket);
 				continue;
 			}
-			// 存储客户端（不再用指针，直接存SOCKET）
+			// Store client (no longer using pointers, directly store SOCKET)
 			client_sockets[client_name] = client_socket;
 		}
-		// 向其他客户端广播新用户加入消息
+		// Init and update user info for client
+		// Broadcast new user join message to other clients
 		BroadcastAddUser(client_name);
 		
 
 		// send user list to new client
 		SendUserList(client_name);
 
-		// 打印新连接信息
+		// Print new connection info
 		EnterCriticalSection(&g_cs_console);
-		std::cout << "新客户端连接 - 名称: " << client_name << ", IP: " << client_ip << ", 端口: " << client_port << std::endl;
+		std::cout << "New client connected - Name: " << client_name << ", IP: " << client_ip << ", Port: " << client_port << std::endl;
 		LeaveCriticalSection(&g_cs_console);
-		// 7. 创建新线程处理该客户端（detach模式：主线程不等待子线程结束）
+		// Create a new thread to handle this client
 		std::thread client_thread(ClientHandler, client_socket, client_ip, client_port, client_name);
-		client_thread.detach(); // 分离线程，由系统管理生命周期
+		client_thread.detach(); 
 	}
 
-	// 8. 清理资源（实际中主线程循环不会退出，此处为规范写法）
+	// Clean up resources
 	closesocket(server_socket);
 	WSACleanup();
 	DeleteCriticalSection(&g_cs_console);
-	std::cout << "服务器资源已清理，程序退出" << std::endl;
+	std::cout << "Server resources cleaned up, exiting program" << std::endl;
 	return 0;
 }

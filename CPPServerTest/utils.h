@@ -10,21 +10,17 @@
 #define EXIT_MSG "!exit"
 #define UNKNOWN_MSG "!unknown"
 
-static std::string GetStrBeforeFirstSpace(const std::string& input_str) {
-	// 1. 查找第一个空格的位置（find返回size_t类型，未找到返回string::npos）
-	size_t first_space_pos = input_str.find(' ');
+static std::string GetStrBeforeFirstSymbol(const std::string& input_str, char symbol) {
+	size_t first_space_pos = input_str.find(symbol);
 
-	// 2. 处理不同情况
 	if (first_space_pos == std::string::npos) {
-		// 情况1：字符串中无空格，返回原字符串
 		return input_str;
 	}
 	else if (first_space_pos == 0) {
-		// 情况2：开头就是空格，返回空字符串（可根据需求调整，比如返回原串或报错）
+		
 		return "";
 	}
 	else {
-		// 情况3：正常有空格，截取0到第一个空格位置的子串
 		return input_str.substr(0, first_space_pos);
 	}
 }
@@ -42,7 +38,7 @@ static void SplitStringAtFirstSpace(const std::string& input_str, std::string& b
 	}
 }
 
-// 为message添加命令头
+// Add command header to message
 static bool AddCommandHeader(std::string& message, const std::string& command) {
 	if (command.empty() || command[0] != '!') {
 		return false; // Command cannot be empty
